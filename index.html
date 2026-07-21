@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pintarrón · Mi Claude (en vivo)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%92%3C/text%3E%3C/svg%3E">
+
+<style>
+  :root {
+    --page: #D8DBDE;
+    --board: #F7F8F6;
+    --grid: rgba(110, 122, 134, 0.16);
+    --frame: #B9BEC4;
+    --ink: #23262B;
+    --ink-soft: #5A6068;
+    --ink-faint: #8A9099;
+    --line: #DDE0DC;
+    --surface: #FFFFFF;
+    --marker-negro: #23262B;
+    --chip-bg: #FFFFFF;
+    --shadow: 0 2px 5px rgba(30, 34, 40, 0.18), 0 8px 18px rgba(30, 34, 40, 0.10);
+    --shadow-soft: 0 1px 3px rgba(30, 34, 40, 0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #17191C;
+      --board: #24282D;
+      --grid: rgba(255, 255, 255, 0.055);
+      --frame: #3A4046;
+      --ink: #ECEEF0;
+      --ink-soft: #A8AEB6;
+      --ink-faint: #767D86;
+      --line: #3A4046;
+      --surface: #2C3137;
+      --marker-negro: #ECEEF0;
+      --chip-bg: #2C3137;
+      --shadow: 0 2px 5px rgba(0, 0, 0, 0.5), 0 8px 18px rgba(0, 0, 0, 0.35);
+      --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+
+  .marker {
+    font-family: "Marker Felt", "Chalkboard SE", "Segoe Print", "Comic Sans MS", cursive;
+    letter-spacing: 0.01em;
+  }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    background: color-mix(in srgb, var(--page) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--frame);
+  }
+
+  .toolbar h1 { font-size: 20px; margin: 0 8px 0 0; font-weight: 400; }
+
+  .vivo-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #1E8A4C;
+    margin-right: 5px;
+    animation: latido 2.2s ease-in-out infinite;
+  }
+
+  @keyframes latido { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .toolbar .sync { font-size: 11.5px; color: var(--ink-soft); margin-right: auto; }
+
+  .btn {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 9px;
+    border: 1px solid var(--frame);
+    background: var(--chip-bg);
+    color: var(--ink);
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .btn:hover { border-color: var(--ink-soft); }
+  .btn:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+  .btn.run { background: #1E8A4C; border-color: #1E8A4C; color: #fff; }
+  .btn.run:hover { background: #187840; }
+
+  .herr { display: flex; gap: 6px; align-items: center; }
+
+  .pluma {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid var(--frame);
+    cursor: pointer;
+    padding: 0;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .pluma[aria-pressed="true"] { border-color: var(--ink); transform: scale(1.15); }
+  .pluma:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+  .pluma.negro { background: var(--marker-negro); }
+  .pluma.rojo { background: #D62839; }
+  .pluma.azul { background: #1D6FD1; }
+  .pluma.verde { background: #1E8A4C; }
+
+  .btn.mini { padding: 5px 10px; font-size: 12px; }
+  .btn.mini[aria-pressed="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+
+  .board-scroll { overflow-x: auto; padding: 18px 16px 30px; }
+
+  .pintarron {
+    position: relative;
+    min-width: 1020px;
+    max-width: 1400px;
+    margin: 0 auto;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 27px, var(--grid) 27px 28px),
+      repeating-linear-gradient(90deg, transparent 0 27px, var(--grid) 27px 28px),
+      var(--board);
+    border: 6px solid var(--frame);
+    border-radius: 14px;
+    box-shadow: inset 0 2px 14px rgba(0, 0, 0, 0.10), var(--shadow-soft);
+    padding: 18px 18px 26px;
+  }
+
+  .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+  .col h2 {
+    font-size: 19px;
+    font-weight: 400;
+    margin: 2px 0 4px;
+    padding-bottom: 3px;
+    border-bottom: 3px solid var(--ink);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .col h2 .n { font-size: 14px; color: var(--ink-soft); }
+  .col .regla { font-size: 10.5px; color: var(--ink-faint); margin: 0 0 12px; min-height: 28px; }
+  .col-proc h2 { border-color: #1E8A4C; }
+  .col-rev h2 { border-color: #D62839; }
+  .col-term h2 { border-color: #1D6FD1; }
+
+  .stacks { display: flex; flex-direction: column; gap: 18px; min-height: 60px; }
+
+  .stack { position: relative; }
+
+  .postit {
+    position: relative;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    border: none;
+    padding: 12px 13px 11px;
+    min-height: 92px;
+    color: #2A2A22;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .postit:hover { transform: scale(1.03) rotate(0deg) !important; z-index: 5; box-shadow: 0 6px 14px rgba(30,34,40,.25), 0 14px 30px rgba(30,34,40,.18); }
+  .postit:focus-visible { outline: 3px solid #1D6FD1; outline-offset: 2px; }
+
+  .stack.multi::before, .stack.multi::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    box-shadow: var(--shadow-soft);
+  }
+  .stack.multi::before { background: rgba(0, 0, 0, 0.10); transform: rotate(2.4deg) translate(3px, 4px); }
+  .stack.multi::after { background: rgba(0, 0, 0, 0.06); transform: rotate(-1.8deg) translate(-3px, 3px); }
+  .stack.multi .postit { z-index: 1; }
+
+  .postit .p-titulo { font-size: 15.5px; line-height: 1.25; font-weight: 400; }
+
+  .postit .p-sub {
+    font-size: 11px;
+    color: rgba(42, 42, 34, 0.72);
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    align-items: baseline;
+  }
+
+  .postit .p-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  .tag {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(42, 42, 34, 0.14);
+    color: #2A2A22;
+    text-transform: uppercase;
+  }
+
+  .tag.vivo { background: #1E8A4C; color: #fff; }
+  .tag.espera { background: #D62839; color: #fff; }
+  .tag.nuevo { background: #1D6FD1; color: #fff; }
+
+  .fam-amarillo { background: #FFE882; }
+  .fam-verde { background: #C7EDA5; }
+  .fam-azul { background: #A8D8FF; }
+  .fam-rosa { background: #FFB9C7; }
+  .fam-naranja { background: #FFD1A1; }
+  .fam-gris { background: #E6E6E0; }
+
+  #tinta {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    touch-action: none;
+  }
+
+  body.modo-dibujo #tinta { pointer-events: auto; cursor: crosshair; }
+  body.modo-borrar #tinta { pointer-events: auto; cursor: cell; }
+
+  .charola { max-width: 1400px; margin: 0 auto; padding: 0 16px 40px; display: none; }
+  .charola.abierta { display: block; }
+  .charola h2 { font-size: 17px; font-weight: 400; color: var(--ink-soft); margin: 0 0 10px; }
+  .charola .mini-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .charola .postit { width: 168px; min-height: 70px; opacity: 0.72; filter: saturate(0.55); }
+
+  dialog.ficha {
+    border: 1px solid var(--frame);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 0;
+    width: min(600px, calc(100vw - 36px));
+    max-height: 84vh;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  }
+
+  dialog.ficha::backdrop { background: rgba(20, 22, 26, 0.55); backdrop-filter: blur(2px); }
+
+  .f-inner { padding: 22px 24px 24px; }
+  .f-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .f-head h3 { margin: 2px 0 0; font-size: 21px; font-weight: 400; }
+
+  .f-fam { display: inline-block; width: 34px; height: 12px; border-radius: 3px; margin-bottom: 4px; box-shadow: var(--shadow-soft); }
+
+  .f-cerrar {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    background: none;
+    color: var(--ink-soft);
+    border-radius: 999px;
+    padding: 5px 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .f-cerrar:hover { color: var(--ink); }
+
+  .f-review {
+    margin: 12px 0 0;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    background: color-mix(in srgb, var(--board) 65%, var(--surface));
+    border: 1px dashed var(--frame);
+    border-radius: 10px;
+    padding: 10px 13px;
+  }
+
+  .f-links { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 7px; }
+
+  .f-links a {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1D6FD1;
+    text-decoration: none;
+    border: 1px solid color-mix(in srgb, #1D6FD1 35%, transparent);
+    border-radius: 999px;
+    padding: 4px 11px;
+  }
+  .f-links a:hover { background: color-mix(in srgb, #1D6FD1 10%, transparent); }
+
+  .f-estado { margin-top: 16px; }
+
+  .f-estado .etq, .f-ses-t {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+  }
+
+  .f-estado .opciones { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .op {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .op[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+
+  .f-ses { margin-top: 18px; }
+  .f-ses ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .f-ses li { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; }
+  .f-ses .s-fila { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .f-ses .s-titulo { font-size: 13.5px; font-weight: 600; }
+  .f-ses .s-fecha { font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .f-ses .s-nota { font-size: 12.5px; color: var(--ink-soft); }
+
+  .f-ses .s-abrir {
+    align-self: flex-start;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-top: 3px;
+    color: #1D6FD1;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .aviso {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    z-index: 60;
+    background: var(--ink);
+    color: var(--page);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    max-width: min(560px, calc(100vw - 40px));
+    text-align: center;
+  }
+
+  .aviso.visible { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1 class="marker">Pintarrón · Mi Claude</h1>
+  <span class="sync"><span class="vivo-dot"></span>🔒 BÓVEDA · <span id="sync-txt">abriendo…</span></span>
+  <button class="btn run" id="btn-run" title="Vuelve a leer la bóveda ahora mismo">↻ Actualizar</button>
+  <div class="herr" role="group" aria-label="Herramientas de plumón">
+    <button class="btn mini" id="t-mover" aria-pressed="true">Mover / leer</button>
+    <button class="pluma negro" data-color="negro" aria-label="Plumón negro" aria-pressed="false"></button>
+    <button class="pluma rojo" data-color="rojo" aria-label="Plumón rojo" aria-pressed="false"></button>
+    <button class="pluma azul" data-color="azul" aria-label="Plumón azul" aria-pressed="false"></button>
+    <button class="pluma verde" data-color="verde" aria-label="Plumón verde" aria-pressed="false"></button>
+    <button class="btn mini" id="t-borrar" aria-pressed="false">Borrador</button>
+    <button class="btn mini" id="t-limpiar">Limpiar tinta</button>
+  </div>
+  <button class="btn mini" id="btn-charola" aria-pressed="false">Archivados · <span id="n-arch">0</span></button>
+</div>
+
+<div class="board-scroll">
+  <div class="pintarron" id="pintarron">
+    <div class="cols" id="cols">
+      <div class="col col-back">
+        <h2 class="marker">Backlog <span class="n" id="n-back"></span></h2>
+        <p class="regla">Sin acción en 3 días o más — sigue abierto, no se pierde.</p>
+        <div class="stacks" id="c-back"></div>
+      </div>
+      <div class="col col-proc">
+        <h2 class="marker">En proceso <span class="n" id="n-proc"></span></h2>
+        <p class="regla">Con acción en los últimos 3 días.</p>
+        <div class="stacks" id="c-proc"></div>
+      </div>
+      <div class="col col-rev">
+        <h2 class="marker">En revisión <span class="n" id="n-rev"></span></h2>
+        <p class="regla">Claude ya entregó — la pelota está en tu cancha.</p>
+        <div class="stacks" id="c-rev"></div>
+      </div>
+      <div class="col col-term">
+        <h2 class="marker">Terminado <span class="n" id="n-term"></span></h2>
+        <p class="regla">Cerrado (a mano o por PR mergeado).</p>
+        <div class="stacks" id="c-term"></div>
+      </div>
+    </div>
+    <canvas id="tinta"></canvas>
+  </div>
+</div>
+
+<div class="charola" id="charola">
+  <h2 class="marker">Archivados — fuera de la vista, no de la memoria</h2>
+  <div class="mini-grid" id="mini-grid"></div>
+</div>
+
+<dialog class="ficha" id="ficha"><div class="f-inner" id="f-inner"></div></dialog>
+<div class="aviso" id="aviso"></div>
+
+<script>
+  /* ====== Pintarrón EN VIVO ======
+     sessions.json  → hechos (launchd lo regenera al momento con cada actividad)
+     temas.json     → capa inteligente (la mantiene la rutina de Claude de las 7:30) */
+
+  const FAMS = { amarillo: "fam-amarillo", verde: "fam-verde", azul: "fam-azul", rosa: "fam-rosa", naranja: "fam-naranja", gris: "fam-gris" };
+  const COLS = { back: "Backlog", proc: "En proceso", rev: "En revisión", term: "Terminado" };
+  const ROT = [-2.1, 1.7, -1.2, 2.3, -0.8, 1.1, -1.8, 0.9];
+  const REFRESCO_MS = 20000;
+
+  let SESIONES = new Map();
+  let TEMASBASE = [];
+  let TEMAS = [];
+  let generadoEn = null;
+
+  let OVR = {};
+  try { OVR = JSON.parse(localStorage.getItem("pintarron-ovr-v1") || "{}"); } catch (e) { OVR = {}; }
+
+  const $ = (s) => document.querySelector(s);
+
+  /* ---- Bóveda: gist cifrado + descifrado local (compatible openssl) ---- */
+  const GIST_RAW = "https://gist.githubusercontent.com/alexpueblag/aa188693c7c9455c9018203a2f953819/raw/boveda.txt";
+  const clave = decodeURIComponent((location.hash || "").replace(/^#/, "")).trim();
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64.replace(/\s+/g, ""));
+    const u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+  }
+
+  /* Réplica de: openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -base64
+     Formato del blob: "Salted__"(8) + salt(8) + ciphertext, todo en base64. */
+  async function descifrar(b64, pass) {
+    const raw = b64ToBytes(b64);
+    if (raw.length < 16 || String.fromCharCode(...raw.slice(0, 8)) !== "Salted__")
+      throw new Error("formato inesperado");
+    const salt = raw.slice(8, 16);
+    const cipher = raw.slice(16);
+    const passKey = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveBits"]);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" }, passKey, 384));
+    const aesKey = await crypto.subtle.importKey(
+      "raw", bits.slice(0, 32), { name: "AES-CBC" }, false, ["decrypt"]);
+    const iv = bits.slice(32, 48);
+    const plano = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, cipher);
+    return JSON.parse(new TextDecoder().decode(plano));
+  }
+
+  async function cargar(avisa) {
+    if (!clave) {
+      $("#sync-txt").textContent = "falta la llave en la liga (después del #)";
+      return;
+    }
+    try {
+      const r = await fetch(GIST_RAW + "?t=" + Date.now(), { cache: "no-store" });
+      const b64 = (await r.text()).trim();
+      const d = await descifrar(b64, clave);
+      SESIONES = new Map(d.sessions.map((s) => [s.id, s]));
+      TEMASBASE = d.temas || [];
+      generadoEn = d.generatedAt || null;
+      armarTemas();
+      pintar();
+      if (avisa) avisar("Bóveda releída y descifrada ✓");
+    } catch (e) {
+      const malaLlave = e.message === "formato inesperado" || e.name === "OperationError" || String(e).toLowerCase().includes("decrypt");
+      $("#sync-txt").textContent = malaLlave ? "llave incorrecta — revisa tu liga" : "sin conexión a la bóveda";
+      if (avisa) avisar(malaLlave ? "Llave incorrecta" : "Sin conexión a la bóveda");
+    }
+  }
+
+  function armarTemas() {
+    const asignadas = new Set();
+    TEMAS = TEMASBASE.map((t) => {
+      const ses = (t.ses || []).filter((id) => SESIONES.has(id)).map((id) => {
+        asignadas.add(id);
+        const s = SESIONES.get(id);
+        const extra = (t.notes && t.notes[id]) ? { note: t.notes[id] } : {};
+        return Object.assign({}, s, extra);
+      });
+      return Object.assign({}, t, { ses, nuevo: false });
+    }).filter((t) => t.ses.length);
+
+    SESIONES.forEach((s, id) => {
+      if (asignadas.has(id)) return;
+      TEMAS.push({
+        id: "nuevo-" + id,
+        nombre: s.t,
+        fam: "gris",
+        nuevo: true,
+        review: "Sesión nueva sin clasificar — la rutina de las 7:30 la agrupa en su tema y le escribe su ficha. Si quieres antes, dime: \"clasifica mis entrantes del pintarrón\".",
+        links: [],
+        ses: [s]
+      });
+    });
+  }
+
+  function activas(t) { return t.ses.filter((s) => !s.arch); }
+
+  function ultima(t) {
+    const a = activas(t);
+    const lista = a.length ? a : t.ses;
+    return Math.max(...lista.map((s) => +new Date(s.d)));
+  }
+
+  function estadoTema(t) {
+    if (!activas(t).length) return "arch";
+    const ov = OVR[t.id];
+    if (ov && ov !== "auto") return ov;
+    if (t.done) return "term";
+    if (t.waiting) return "rev";
+    const dias = (Date.now() - ultima(t)) / 86400000;
+    return dias < 3 ? "proc" : "back";
+  }
+
+  function rel(ms) {
+    const m = (Date.now() - ms) / 60000;
+    if (m < 2) return "ahora mismo";
+    if (m < 60) return "hace " + Math.round(m) + " min";
+    const d = m / 1440;
+    if (d < 1) return "hace " + Math.round(m / 60) + " h";
+    if (d < 2) return "ayer";
+    return "hace " + Math.round(d) + " días";
+  }
+
+  function pintar() {
+    const cont = { back: $("#c-back"), proc: $("#c-proc"), rev: $("#c-rev"), term: $("#c-term") };
+    Object.values(cont).forEach((c) => (c.innerHTML = ""));
+    const conteo = { back: 0, proc: 0, rev: 0, term: 0 };
+
+    const orden = TEMAS.filter((t) => estadoTema(t) !== "arch").sort((a, b) => ultima(b) - ultima(a));
+
+    orden.forEach((t, i) => {
+      const est = estadoTema(t);
+      conteo[est]++;
+      const act = activas(t);
+      const escribiendo = act.some((s) => s.active);
+
+      const stack = document.createElement("div");
+      stack.className = "stack" + (act.length > 1 ? " multi" : "");
+
+      const b = document.createElement("button");
+      b.className = "postit " + FAMS[t.fam];
+      b.style.transform = "rotate(" + ROT[i % ROT.length] + "deg)";
+      b.setAttribute("aria-label", t.nombre + " — " + COLS[est] + ", " + rel(ultima(t)));
+      let badges = "";
+      if (escribiendo) badges += '<span class="tag vivo">Escribiendo ahora</span>';
+      if (t.nuevo) badges += '<span class="tag nuevo">Nuevo</span>';
+      if (t.waiting && est === "rev") badges += '<span class="tag espera">Te espera</span>';
+      if (act.length > 1) badges += '<span class="tag">×' + act.length + " sesiones</span>";
+      b.innerHTML =
+        '<span class="p-titulo marker">' + t.nombre + "</span>" +
+        (badges ? '<span class="p-badges">' + badges + "</span>" : "") +
+        '<span class="p-sub"><span>' + rel(ultima(t)) + "</span></span>";
+      b.addEventListener("click", () => abrirFicha(t.id));
+      stack.appendChild(b);
+      cont[est].appendChild(stack);
+    });
+
+    $("#n-back").textContent = conteo.back;
+    $("#n-proc").textContent = conteo.proc;
+    $("#n-rev").textContent = conteo.rev;
+    $("#n-term").textContent = conteo.term;
+
+    pintarCharola();
+    pintarSync();
+    requestAnimationFrame(ajustarTinta);
+  }
+
+  function pintarCharola() {
+    const grid = $("#mini-grid");
+    grid.innerHTML = "";
+    let n = 0;
+    TEMAS.forEach((t) => {
+      t.ses.filter((s) => s.arch).forEach((s) => {
+        n++;
+        const b = document.createElement("button");
+        b.className = "postit " + FAMS[t.fam];
+        b.style.transform = "rotate(" + ROT[n % ROT.length] + "deg)";
+        b.setAttribute("aria-label", s.t + " — archivada, " + rel(+new Date(s.d)));
+        b.innerHTML = '<span class="p-titulo marker" style="font-size:12.5px">' + s.t + '</span><span class="p-sub"><span>' + rel(+new Date(s.d)) + "</span></span>";
+        b.addEventListener("click", () => abrirFicha(t.id));
+        grid.appendChild(b);
+      });
+    });
+    $("#n-arch").textContent = n;
+  }
+
+  function pintarSync() {
+    if (!generadoEn) return;
+    const seg = Math.max(0, Math.round((Date.now() - +new Date(generadoEn)) / 1000));
+    const txt = seg < 90 ? "datos de hace " + seg + " s" : "datos de " + rel(+new Date(generadoEn));
+    $("#sync-txt").textContent = txt + " · " + SESIONES.size + " sesiones";
+  }
+
+  function abrirFicha(id) {
+    const t = TEMAS.find((x) => x.id === id);
+    if (!t) return;
+    const est = estadoTema(t);
+    const ov = OVR[t.id] || "auto";
+
+    const filas = [...t.ses].sort((a, b) => +new Date(b.d) - +new Date(a.d)).map((s) => {
+      let bad = "";
+      if (s.active) bad = ' <span class="tag vivo">Escribiendo ahora</span>';
+      else if (s.arch) bad = ' <span class="tag">Archivada</span>';
+      return (
+        "<li><div class='s-fila'><span class='s-titulo'>" + s.t + bad + "</span>" +
+        "<span class='s-fecha'>" + rel(+new Date(s.d)) + "</span></div>" +
+        (s.note ? "<span class='s-nota'>" + s.note + "</span>" : "") +
+        "<button class='s-abrir' data-open='" + s.id + "' data-t=\"" + s.t.replace(/"/g, "&quot;") + "\">Copiar comando para abrir esta sesión</button></li>"
+      );
+    }).join("");
+
+    const links = (t.links && t.links.length)
+      ? "<div class='f-links'>" + t.links.map((l) => "<a href='" + l.u + "' target='_blank' rel='noopener'>" + l.t + " ↗</a>").join("") + "</div>"
+      : "";
+
+    const ops = ["auto", "back", "proc", "rev", "term"].map((k) => {
+      const lbl = k === "auto" ? "Auto (reglas)" : COLS[k];
+      return "<button class='op' data-ov='" + k + "' aria-pressed='" + String(ov === k) + "'>" + lbl + "</button>";
+    }).join("");
+
+    $("#f-inner").innerHTML =
+      "<div class='f-head'><div>" +
+      "<span class='f-fam " + FAMS[t.fam] + "'></span>" +
+      "<h3 class='marker'>" + t.nombre + "</h3>" +
+      "<div style='font-size:12px;color:var(--ink-faint);margin-top:2px'>" + (est === "arch" ? "Archivado" : COLS[est]) + " · " + rel(ultima(t)) + "</div>" +
+      "</div><button class='f-cerrar' id='f-cerrar'>Cerrar</button></div>" +
+      "<p class='f-review'>" + t.review + "</p>" + links +
+      "<div class='f-estado'><div class='etq'>Mover a</div><div class='opciones'>" + ops + "</div></div>" +
+      "<div class='f-ses'><div class='f-ses-t'>Sesiones (" + t.ses.length + ") — la más reciente arriba</div><ul>" + filas + "</ul></div>";
+
+    const dlg = $("#ficha");
+    dlg.showModal();
+    $("#f-cerrar").addEventListener("click", () => dlg.close());
+
+    dlg.querySelectorAll(".op").forEach((b) => {
+      b.addEventListener("click", () => {
+        OVR[t.id] = b.dataset.ov;
+        try { localStorage.setItem("pintarron-ovr-v1", JSON.stringify(OVR)); } catch (e) {}
+        dlg.close();
+        pintar();
+        avisar(b.dataset.ov === "auto" ? "De vuelta a reglas automáticas" : "Movido a " + COLS[b.dataset.ov]);
+      });
+    });
+
+    dlg.querySelectorAll(".s-abrir").forEach((b) => {
+      b.addEventListener("click", () => {
+        const txt = 'Abre mi sesión "' + b.dataset.t + '" (' + b.dataset.open + ")";
+        copiar(txt, "Copiado — pégamelo en cualquier chat de Claude y te abro esa sesión");
+      });
+    });
+  }
+
+  $("#ficha").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+  $("#btn-run").addEventListener("click", () => cargar(true));
+
+  $("#btn-charola").addEventListener("click", () => {
+    const ch = $("#charola");
+    const abierto = ch.classList.toggle("abierta");
+    $("#btn-charola").setAttribute("aria-pressed", String(abierto));
+    if (abierto) ch.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+
+  let avisoTimer = null;
+  function avisar(msg) {
+    const a = $("#aviso");
+    a.textContent = msg;
+    a.classList.add("visible");
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(() => a.classList.remove("visible"), 4200);
+  }
+
+  function copiar(txt, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => avisar(msg), () => avisar(txt));
+    } else { avisar(txt); }
+  }
+
+  /* ---------- Tinta de plumón ---------- */
+  const lienzo = $("#tinta");
+  const ctx = lienzo.getContext("2d");
+  const COLORES = { negro: () => getComputedStyle(document.documentElement).getPropertyValue("--marker-negro").trim() || "#23262B", rojo: () => "#D62839", azul: () => "#1D6FD1", verde: () => "#1E8A4C" };
+
+  let trazos = [];
+  try { trazos = JSON.parse(localStorage.getItem("pintarron-tinta-v1") || "[]"); } catch (e) { trazos = []; }
+
+  let herramienta = "mover";
+  let colorActual = "negro";
+  let trazoVivo = null;
+
+  function ajustarTinta() {
+    const p = $("#pintarron");
+    const w = p.clientWidth, h = p.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    lienzo.width = w * dpr;
+    lienzo.height = h * dpr;
+    lienzo.style.width = w + "px";
+    lienzo.style.height = h + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redibujar();
+  }
+
+  function redibujar() {
+    const w = lienzo.clientWidth, h = lienzo.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    trazos.forEach((tr) => {
+      ctx.strokeStyle = COLORES[tr.c] ? COLORES[tr.c]() : tr.c;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      tr.p.forEach((pt, i) => {
+        const x = pt[0] * w, y = pt[1] * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    });
+  }
+
+  function guardarTinta() {
+    try { localStorage.setItem("pintarron-tinta-v1", JSON.stringify(trazos)); } catch (e) {}
+  }
+
+  function puntoNorm(ev) {
+    const r = lienzo.getBoundingClientRect();
+    return [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height];
+  }
+
+  lienzo.addEventListener("pointerdown", (ev) => {
+    if (herramienta === "pluma") {
+      trazoVivo = { c: colorActual, p: [puntoNorm(ev)] };
+      lienzo.setPointerCapture(ev.pointerId);
+    } else if (herramienta === "borrar") {
+      borrarEn(ev);
+      lienzo.setPointerCapture(ev.pointerId);
+    }
+  });
+
+  lienzo.addEventListener("pointermove", (ev) => {
+    if (herramienta === "pluma" && trazoVivo) {
+      trazoVivo.p.push(puntoNorm(ev));
+      const w = lienzo.clientWidth, h = lienzo.clientHeight;
+      const n = trazoVivo.p.length;
+      if (n > 1) {
+        ctx.strokeStyle = COLORES[trazoVivo.c]();
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(trazoVivo.p[n - 2][0] * w, trazoVivo.p[n - 2][1] * h);
+        ctx.lineTo(trazoVivo.p[n - 1][0] * w, trazoVivo.p[n - 1][1] * h);
+        ctx.stroke();
+      }
+    } else if (herramienta === "borrar" && ev.buttons) {
+      borrarEn(ev);
+    }
+  });
+
+  function terminarTrazo() {
+    if (trazoVivo && trazoVivo.p.length > 1) { trazos.push(trazoVivo); guardarTinta(); }
+    trazoVivo = null;
+  }
+
+  lienzo.addEventListener("pointerup", terminarTrazo);
+  lienzo.addEventListener("pointercancel", terminarTrazo);
+
+  function borrarEn(ev) {
+    const w = lienzo.clientWidth, h = lienzo.clientHeight;
+    const [nx, ny] = puntoNorm(ev);
+    const antes = trazos.length;
+    trazos = trazos.filter((tr) => !tr.p.some((pt) => {
+      const dx = (pt[0] - nx) * w, dy = (pt[1] - ny) * h;
+      return dx * dx + dy * dy < 196;
+    }));
+    if (trazos.length !== antes) { guardarTinta(); redibujar(); }
+  }
+
+  function setHerr(h, color) {
+    herramienta = h;
+    if (color) colorActual = color;
+    document.body.classList.toggle("modo-dibujo", h === "pluma");
+    document.body.classList.toggle("modo-borrar", h === "borrar");
+    $("#t-mover").setAttribute("aria-pressed", String(h === "mover"));
+    $("#t-borrar").setAttribute("aria-pressed", String(h === "borrar"));
+    document.querySelectorAll(".pluma").forEach((p) => p.setAttribute("aria-pressed", String(h === "pluma" && p.dataset.color === colorActual)));
+  }
+
+  $("#t-mover").addEventListener("click", () => setHerr("mover"));
+  $("#t-borrar").addEventListener("click", () => setHerr("borrar"));
+  document.querySelectorAll(".pluma").forEach((p) => p.addEventListener("click", () => setHerr("pluma", p.dataset.color)));
+
+  $("#t-limpiar").addEventListener("click", () => {
+    if (!trazos.length) { avisar("El pintarrón ya está limpio"); return; }
+    trazos = [];
+    guardarTinta();
+    redibujar();
+    avisar("Tinta borrada");
+  });
+
+  window.addEventListener("resize", () => requestAnimationFrame(ajustarTinta));
+
+  /* ---------- Ciclo en vivo ---------- */
+  let refrescoPendiente = false;
+
+  function refrescar() {
+    /* no interrumpir si hay ficha abierta o se está dibujando */
+    if ($("#ficha").open || trazoVivo) { refrescoPendiente = true; pintarSync(); return; }
+    refrescoPendiente = false;
+    cargar(false);
+  }
+
+  /* Versión web: no hay SSE (la bóveda es un gist). Se sondea el gist cada 20 s;
+     la Mac lo actualiza ~4 s después de cada cambio, así que el retraso total
+     visto desde aquí es de ~20-30 s. */
+  setInterval(refrescar, REFRESCO_MS);
+
+  /* Al volver a la pestaña o a la ventana: frescura inmediata */
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescar(); });
+  window.addEventListener("focus", refrescar);
+
+  /* si algo llegó mientras la ficha estaba abierta, aplicarlo al cerrarla */
+  $("#ficha").addEventListener("close", () => { if (refrescoPendiente) refrescar(); });
+
+  setInterval(pintarSync, 5000);
+
+  cargar(false);
+</script>
+</body>
+</html>

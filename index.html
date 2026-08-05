@@ -224,6 +224,8 @@
 
   .tag.vivo { background: #1E8A4C; color: #fff; }
   .tag.espera { background: #D62839; color: #fff; }
+  .tag.espera.fuerte { background: #A31220; }
+  .tag.espera.grave { background: #6E0A17; box-shadow: 0 0 0 2px rgba(214, 40, 57, 0.35); }
   .tag.nuevo { background: #1D6FD1; color: #fff; }
 
   .fam-amarillo { background: #FFE882; }
@@ -415,7 +417,7 @@
       </div>
       <div class="col col-rev">
         <h2 class="marker">En revisión <span class="n" id="n-rev"></span></h2>
-        <p class="regla">Claude ya entregó — la pelota está en tu cancha.</p>
+        <p class="regla">Claude ya entregó — la pelota está en tu cancha. El que MÁS lleva esperando, arriba.</p>
         <div class="stacks" id="c-rev"></div>
       </div>
       <div class="col col-term">
@@ -567,7 +569,13 @@
     Object.values(cont).forEach((c) => (c.innerHTML = ""));
     const conteo = { back: 0, proc: 0, rev: 0, term: 0 };
 
-    const orden = TEMAS.filter((t) => estadoTema(t) !== "arch").sort((a, b) => ultima(b) - ultima(a));
+    const cubetas = { back: [], proc: [], rev: [], term: [] };
+    TEMAS.forEach((t) => { const e = estadoTema(t); if (e !== "arch") cubetas[e].push(t); });
+    cubetas.back.sort((a, b) => ultima(b) - ultima(a));
+    cubetas.proc.sort((a, b) => ultima(b) - ultima(a));
+    cubetas.term.sort((a, b) => ultima(b) - ultima(a));
+    cubetas.rev.sort((a, b) => ultima(a) - ultima(b)); /* el que MÁS lleva esperándote, hasta arriba */
+    const orden = [...cubetas.proc, ...cubetas.rev, ...cubetas.back, ...cubetas.term];
 
     orden.forEach((t, i) => {
       const est = estadoTema(t);
@@ -585,7 +593,11 @@
       let badges = "";
       if (escribiendo) badges += '<span class="tag vivo">Escribiendo ahora</span>';
       if (t.nuevo) badges += '<span class="tag nuevo">Nuevo</span>';
-      if (t.waiting && est === "rev") badges += '<span class="tag espera">Te espera</span>';
+      if (est === "rev") {
+        const hEsp = (Date.now() - ultima(t)) / 3600000;
+        const clsEsp = hEsp >= 120 ? "espera grave" : (hEsp >= 48 ? "espera fuerte" : "espera");
+        badges += '<span class="tag ' + clsEsp + '">⏳ Te espera · ' + rel(ultima(t)).replace("hace ", "") + '</span>';
+      }
       if (act.length > 1) badges += '<span class="tag">×' + act.length + " sesiones</span>";
       b.innerHTML =
         '<span class="p-titulo marker">' + t.nombre + "</span>" +

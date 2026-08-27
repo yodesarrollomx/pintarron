@@ -227,6 +227,20 @@
   .tag.espera.fuerte { background: #A31220; }
   .tag.espera.grave { background: #6E0A17; box-shadow: 0 0 0 2px rgba(214, 40, 57, 0.35); }
   .tag.nuevo { background: #1D6FD1; color: #fff; }
+  .tag.ambar { background: #B07A18; color: #fff; }
+
+  .franja-hoy { max-width: 1400px; margin: 14px auto 0; padding: 0 16px; }
+  .franja-hoy .caja {
+    background: var(--surface);
+    border: 1px solid var(--frame);
+    border-left: 5px solid #1E8A4C;
+    border-radius: 10px;
+    padding: 10px 16px 12px;
+    box-shadow: var(--shadow-soft);
+  }
+  .franja-hoy .t { font-size: 15px; margin-bottom: 4px; }
+  .franja-hoy ul { margin: 0; padding-left: 18px; }
+  .franja-hoy li { font-size: 13px; color: var(--ink-soft); margin: 3px 0; }
 
   .fam-amarillo { background: #FFE882; }
   .fam-verde { background: #C7EDA5; }
@@ -402,6 +416,8 @@
   <button class="btn mini" id="btn-charola" aria-pressed="false">Archivados · <span id="n-arch">0</span></button>
 </div>
 
+<div class="franja-hoy" id="franja-hoy" hidden></div>
+
 <div class="board-scroll">
   <div class="pintarron" id="pintarron">
     <div class="cols" id="cols">
@@ -452,6 +468,7 @@
   let TEMASBASE = [];
   let TEMAS = [];
   let generadoEn = null;
+  let HOY = null;
 
   let OVR = {};
   try { OVR = JSON.parse(localStorage.getItem("pintarron-ovr-v1") || "{}"); } catch (e) { OVR = {}; }
@@ -499,6 +516,7 @@
       const d = await descifrar(b64, clave);
       SESIONES = new Map(d.sessions.map((s) => [s.id, s]));
       TEMASBASE = d.temas || [];
+      HOY = d.hoy || null;
       generadoEn = d.generatedAt || null;
       armarTemas();
       pintar();
@@ -520,10 +538,16 @@
         return Object.assign({}, s, extra);
       });
       return Object.assign({}, t, { ses, nuevo: false });
-    }).filter((t) => t.ses.length);
+    });
+
+    /* adopción por título (el demonio ya marcó s.tema): la corrida de una
+       rutina cae SIEMPRE dentro de su mismo post-it, nunca como gris nuevo */
+    const porTema = {};
+    TEMAS.forEach((t) => { porTema[t.id] = t; });
 
     SESIONES.forEach((s, id) => {
       if (asignadas.has(id)) return;
+      if (s.tema && porTema[s.tema]) { porTema[s.tema].ses.push(s); return; }
       TEMAS.push({
         id: "nuevo-" + id,
         nombre: s.t,
@@ -534,6 +558,8 @@
         ses: [s]
       });
     });
+
+    TEMAS = TEMAS.filter((t) => t.ses.length);
   }
 
   function activas(t) { return t.ses.filter((s) => !s.arch); }
@@ -598,7 +624,9 @@
         const clsEsp = hEsp >= 120 ? "espera grave" : (hEsp >= 48 ? "espera fuerte" : "espera");
         badges += '<span class="tag ' + clsEsp + '">⏳ Te espera · ' + rel(ultima(t)).replace("hace ", "") + '</span>';
       }
-      if (act.length > 1) badges += '<span class="tag">×' + act.length + " sesiones</span>";
+      if (t.rutina) badges += '<span class="tag rutina">⚙️ ' + act.length + ' corridas</span>';
+      else if (act.length > 1) badges += '<span class="tag">×' + act.length + " sesiones</span>";
+      if (!t.entregable && !t.rutina && !t.libre && !t.nuevo && est !== "term") badges += '<span class="tag ambar">Sin entregable</span>';
       b.innerHTML =
         '<span class="p-titulo marker">' + t.nombre + "</span>" +
         (badges ? '<span class="p-badges">' + badges + "</span>" : "") +
@@ -615,7 +643,17 @@
 
     pintarCharola();
     pintarSync();
+    pintarHoy();
     requestAnimationFrame(ajustarTinta);
+  }
+
+  function pintarHoy() {
+    const f = $("#franja-hoy");
+    if (!f) return;
+    if (!HOY || !HOY.lineas || !HOY.lineas.length) { f.hidden = true; return; }
+    f.hidden = false;
+    f.innerHTML = "<div class='caja'><div class='t marker'>📣 Revisión de hoy · " + (HOY.f || "") + "</div><ul>" +
+      HOY.lineas.map((l) => "<li>" + l + "</li>").join("") + "</ul></div>";
   }
 
   function pintarCharola() {
@@ -650,7 +688,9 @@
     const est = estadoTema(t);
     const ov = OVR[t.id] || "auto";
 
-    const filas = [...t.ses].sort((a, b) => +new Date(b.d) - +new Date(a.d)).map((s) => {
+    const listaSes = [...t.ses].sort((a, b) => +new Date(b.d) - +new Date(a.d));
+    const visibles = t.rutina ? listaSes.slice(0, 5) : listaSes;
+    const filas = visibles.map((s) => {
       let bad = "";
       if (s.active) bad = ' <span class="tag vivo">Escribiendo ahora</span>';
       else if (s.arch) bad = ' <span class="tag">Archivada</span>';
@@ -660,7 +700,24 @@
         (s.note ? "<span class='s-nota'>" + s.note + "</span>" : "") +
         "<button class='s-abrir' data-open='" + s.id + "' data-t=\"" + s.t.replace(/"/g, "&quot;") + "\">Copiar comando para abrir esta sesión</button></li>"
       );
-    }).join("");
+    }).join("") + (t.rutina && listaSes.length > 5
+      ? "<li style='color:var(--ink-faint);font-size:12px'>⚙️ … y " + (listaSes.length - 5) + " corridas más, plegadas dentro de este post-it</li>"
+      : "");
+
+    const ent = t.entregable
+      ? "<div class='f-estado'><div class='etq' style='color:#1E8A4C'>🎯 Entregable</div>" +
+        "<p style='margin:0;font-size:13.5px'>" + t.entregable.q + "</p>" +
+        "<p style='margin:3px 0 0;font-size:12px;color:var(--ink-faint)'>Terminado cuando: " + t.entregable.fin + "</p>" +
+        (est !== "term" && !t.rutina && !t.libre
+          ? "<div class='opciones' style='margin-top:8px'><button class='op' id='btn-cumplido' style='color:#1E8A4C;border-color:#1E8A4C'>✅ Entregable cumplido → Terminado</button></div>"
+          : "") + "</div>"
+      : (t.rutina || t.libre || t.nuevo ? "" : "<div class='f-estado'><span class='tag ambar'>⚠ Sin entregable — dime la meta y la escribo</span></div>");
+
+    const hist = (t.historial && t.historial.length)
+      ? "<div class='f-ses'><div class='f-ses-t'>📜 Historial — lo más nuevo arriba</div><ul>" +
+        t.historial.map((h) => "<li><div class='s-fila'><span class='s-fecha'>" + h.f + "</span><span class='s-nota'>" + h.q + "</span></div></li>").join("") +
+        "</ul></div>"
+      : "";
 
     const links = (t.links && t.links.length)
       ? "<div class='f-links'>" + t.links.map((l) => "<a href='" + l.u + "' target='_blank' rel='noopener'>" + l.t + " ↗</a>").join("") + "</div>"
@@ -677,8 +734,8 @@
       "<h3 class='marker'>" + t.nombre + "</h3>" +
       "<div style='font-size:12px;color:var(--ink-faint);margin-top:2px'>" + (est === "arch" ? "Archivado" : COLS[est]) + " · " + rel(ultima(t)) + "</div>" +
       "</div><button class='f-cerrar' id='f-cerrar'>Cerrar</button></div>" +
-      "<p class='f-review'>" + t.review + "</p>" + links +
-      "<div class='f-estado'><div class='etq'>Mover a</div><div class='opciones'>" + ops + "</div></div>" +
+      "<p class='f-review'>" + t.review + "</p>" + links + ent +
+      "<div class='f-estado'><div class='etq'>Mover a</div><div class='opciones'>" + ops + "</div></div>" + hist +
       "<div class='f-ses'><div class='f-ses-t'>Sesiones (" + t.ses.length + ") — la más reciente arriba</div><ul>" + filas + "</ul></div>";
 
     const dlg = $("#ficha");
@@ -700,6 +757,16 @@
         const txt = 'Abre mi sesión "' + b.dataset.t + '" (' + b.dataset.open + ")";
         copiar(txt, "Copiado — pégamelo en cualquier chat de Claude y te abro esa sesión");
       });
+    });
+
+    const bc = dlg.querySelector("#btn-cumplido");
+    if (bc) bc.addEventListener("click", () => {
+      OVR[t.id] = "term";
+      try { localStorage.setItem("pintarron-ovr-v1", JSON.stringify(OVR)); } catch (e) {}
+      dlg.close();
+      pintar();
+      copiar('Cierra el tema "' + t.nombre + '": entregable cumplido.',
+        "🎯 Movido a Terminado — pégame el texto copiado en Claude y lo formalizo en historial y bóveda");
     });
   }
 
